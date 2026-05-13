@@ -1,0 +1,56 @@
+modules = ["web", "java-graalvm22.3", "python-3.12"]
+[agent]
+expertMode = true
+stack = "BEST_EFFORT_FALLBACK"
+
+[nix]
+channel = "stable-25_05"
+packages = ["iana-etc"]
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Build Botcraft"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Start application"
+
+[[workflows.workflow]]
+name = "Build Botcraft"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "bash -c 'echo \"Botcraft C++ Library\" && echo \"\" && echo \"Built libraries:\" && ls -la bin/*.so && echo \"\" && echo \"Built examples:\" && ls bin/[0-9]_* && echo \"\" && echo \"Build complete! Run any example with: ./bin/<example_name> <server_address> <port> <username>\"'"
+
+[workflows.workflow.metadata]
+outputType = "console"
+
+[[workflows.workflow]]
+name = "Start application"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd ui && python app.py"
+waitForPort = 5000
+
+[workflows.workflow.metadata]
+outputType = "webview"
+
+[deployment]
+deploymentTarget = "vm"
+run = ["bash", "-c", "cd ui && python app.py"]
+build = ["bash", "-c", "mkdir -p build && cd build && cmake -DBOTCRAFT_GAME_VERSION=latest -DCMAKE_BUILD_TYPE=Release -DBOTCRAFT_BUILD_EXAMPLES=ON -DBOTCRAFT_BUILD_TESTS=OFF -DBOTCRAFT_COMPRESSION=ON -DBOTCRAFT_ENCRYPTION=ON -DBOTCRAFT_USE_OPENGL_GUI=OFF -DBOTCRAFT_BUILD_DOC=OFF -DZLIB_ROOT=/nix/store/rxd3kdsc7k72198g58wk0qp3xdip5x5d-zlib-1.3.1-dev -DZLIB_LIBRARY=/nix/store/jl19fdc7gdxqz9a1s368r9d15vpirnqy-zlib-1.3.1/lib/libz.so -DOPENSSL_ROOT_DIR=/nix/store/0225zs9jl9s2y3ai1arbg0h9z7z4bmfi-openssl-3.4.1-dev -DOPENSSL_LIBRARIES=/nix/store/5xmcl9wr18g6ym3dh3363hv8hp6jyxqd-openssl-3.4.1/lib .. && cmake --build . --config Release --parallel 4 && g++ -std=c++17 -O2 -I botcraft/include -I protocolCraft/include -I 3rdparty/asio/asio/include -DPROTOCOL_VERSION=775 -DUSE_COMPRESSION=1 -DUSE_ENCRYPTION=1 ui/controlbot.cpp -L bin/ -lbotcraft -lprotocolCraft -Wl,-rpath,bin/ -lpthread -o bin/controlbot"]
+
+[[ports]]
+localPort = 5000
+externalPort = 80

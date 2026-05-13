@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Botcraft Control Panel</title>
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<style>
+  :root {
+    --bg: #1a1a1a; --surface: #242424; --surface2: #2e2e2e; --border: #3a3a3a;
+    --green: #4caf50; --green-dim: #2e6b30; --red: #f44336; --red-dim: #7a1f1a;
+    --yellow: #ffc107; --blue: #2196f3; --text: #e0e0e0; --text-dim: #888;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', sans-serif; min-height: 100vh; }
+
+  header {
+    background: #111; border-bottom: 2px solid var(--green);
+    padding: 10px 20px; display: flex; align-items: center; gap: 12px;
+  }
+  header .logo { font-size: 20px; font-weight: 700; color: var(--green); letter-spacing: 1px; }
+  header .logo span { color: #888; font-size: 13px; font-weight: 400; margin-left: 8px; }
+  header .stats { margin-left: auto; display: flex; gap: 16px; font-size: 13px; color: var(--text-dim); }
+  header .stats strong { color: var(--text); }
+
+  .container { display: flex; height: calc(100vh - 49px); overflow: hidden; }
+  .sidebar { width: 290px; min-width: 260px; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+  .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+  .sidebar-section { border-bottom: 1px solid var(--border); padding: 14px; }
+  .sidebar-section h3 { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim); margin-bottom: 10px; }
+
+  .form-group { margin-bottom: 8px; }
+  .form-group label { display: block; font-size: 11px; color: var(--text-dim); margin-bottom: 3px; }
+  .form-row { display: flex; gap: 8px; }
+  .form-row .form-group { flex: 1; }
+  input, select {
+    width: 100%; background: var(--surface2); border: 1px solid var(--border);
+    color: var(--text); padding: 6px 9px; border-radius: 4px; font-size: 12px; outline: none; transition: border-color .2s;
+  }
+  input:focus, select:focus { border-color: var(--green); }
+
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+    padding: 7px 13px; border: none; border-radius: 4px; cursor: pointer;
+    font-size: 12px; font-weight: 600; transition: opacity .15s, transform .1s;
+  }
+  .btn:hover { opacity: .85; } .btn:active { transform: scale(.97); }
+  .btn-green { background: var(--green); color: #fff; }
+  .btn-red { background: var(--red); color: #fff; }
+  .btn-blue { background: var(--blue); color: #fff; }
+  .btn-gray { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+  .btn-full { width: 100%; } .btn:disabled { opacity: .4; cursor: not-allowed; }
+
+  .bot-list { flex: 1; overflow-y: auto; padding: 8px; }
+  .bot-card { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 9px 11px; margin-bottom: 7px; cursor: pointer; transition: border-color .15s; }
+  .bot-card:hover { border-color: #555; } .bot-card.active { border-color: var(--green); }
+  .bot-card-header { display: flex; align-items: center; gap: 8px; }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .status-dot.connected { background: var(--green); box-shadow: 0 0 4px var(--green); }
+  .status-dot.connecting { background: var(--yellow); animation: pulse 1s infinite; }
+  .status-dot.disconnected { background: #555; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+  .bot-name { font-size: 13px; font-weight: 600; }
+  .bot-addr { font-size: 11px; color: var(--text-dim); margin-top: 1px; }
+  .bot-meta { font-size: 11px; color: var(--text-dim); }
+  .bot-card-actions { display: flex; gap: 5px; margin-top: 7px; }
+
+  /* Tabs */
+  .tab-bar { display: flex; background: var(--surface); border-bottom: 1px solid var(--border); }
+  .tab { padding: 9px 18px; font-size: 12px; font-weight: 600; cursor: pointer; color: var(--text-dim); border-bottom: 2px solid transparent; transition: color .15s, border-color .15s; }
+  .tab.active { color: var(--green); border-bottom-color: var(--green); }
+  .tab:hover:not(.active) { color: var(--text); }
+  .tab-content { display: none; flex: 1; flex-direction: column; overflow: hidden; }
+  .tab-content.active { display: flex; }
+
+  .main-header {
+    padding: 11px 18px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; background: var(--surface);
+  }
+  .main-header h2 { font-size: 15px; }
+  .badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: var(--surface2); color: var(--text-dim); }
+  .badge.connected { background: var(--green-dim); color: var(--green); }
+  .badge.connecting { background: #4a3a00; color: var(--yellow); }
+
+  /* Controls tab */
+  .controls-panel { display: flex; gap: 14px; padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--surface); flex-wrap: wrap; }
+  .move-pad { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .move-row { display: flex; gap: 4px; }
+  .move-btn { width: 46px; height: 46px; background: var(--surface2); border: 1px solid var(--border); color: var(--text); border-radius: 6px; cursor: pointer; font-size: 18px; display: flex; align-items: center; justify-content: center; transition: background .08s, border-color .08s; user-select: none; -webkit-user-select: none; touch-action: none; }
+  .move-btn:hover { background: #3a3a3a; }
+  .move-btn.held { background: var(--green-dim); border-color: var(--green); color: #fff; }
+  .move-btn.spacer { visibility: hidden; }
+  .action-group { display: flex; flex-direction: column; gap: 5px; }
+  .action-group-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim); margin-bottom: 2px; }
+  .chat-section { display: flex; flex-direction: column; gap: 7px; flex: 1; }
+  .chat-input-row { display: flex; gap: 7px; align-items: center; }
+  .chat-input-row input { flex: 1; }
+
+  /* Logs */
+  .logs-area { flex: 1; background: #111; overflow-y: auto; padding: 10px 14px; font-family: 'Courier New', monospace; font-size: 12px; line-height: 1.6; }
+  .log-line { white-space: pre-wrap; word-break: break-all; }
+  .log-line.info { color: #ccc; } .log-line.warn { color: var(--yellow); }
+  .log-line.error,.log-line.fatal { color: #ff5555; } .log-line.debug { color: #666; }
+  .log-line.system { color: #55ff55; }
+  .log-toolbar { display: flex; align-items: center; gap: 8px; padding: 6px 14px; background: var(--surface); border-top: 1px solid var(--border); }
+  .log-toolbar span { font-size: 12px; color: var(--text-dim); }
+
+  /* Minimap tab */
+  .minimap-panel { display: flex; flex: 1; overflow: hidden; }
+  .minimap-left { flex: 1; display: flex; align-items: center; justify-content: center; background: #111; overflow: hidden; position: relative; }
+  #minimap-canvas { image-rendering: pixelated; cursor: crosshair; }
+  .minimap-right { width: 200px; background: var(--surface); border-left: 1px solid var(--border); display: flex; flex-direction: column; gap: 0; }
+  .stat-card { padding: 12px 14px; border-bottom: 1px solid var(--border); }
+  .stat-card h4 { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim); margin-bottom: 8px; }
+  .stat-row { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px; }
+  .stat-row .val { font-weight: 600; color: var(--text); font-family: monospace; }
+  .bar-label { font-size: 11px; color: var(--text-dim); margin-bottom: 4px; }
+  .bar-track { height: 8px; background: #333; border-radius: 4px; overflow: hidden; margin-bottom: 8px; }
+  .bar-fill { height: 100%; border-radius: 4px; transition: width .3s; }
+  .bar-health { background: #f44336; }
+  .bar-food { background: #ff9800; }
+  .minimap-legend { padding: 12px 14px; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-dim); margin-bottom: 5px; }
+  .legend-color { width: 12px; height: 12px; border-radius: 2px; flex-shrink: 0; border: 1px solid #444; }
+  .compass { position: absolute; top: 12px; right: 12px; width: 44px; height: 44px; border-radius: 50%; background: rgba(0,0,0,.7); border: 1px solid #444; display: flex; align-items: center; justify-content: center; }
+  .compass canvas { display: block; }
+  .coords-overlay { position: absolute; bottom: 10px; left: 12px; font-family: monospace; font-size: 12px; color: #55ff55; background: rgba(0,0,0,.7); padding: 4px 8px; border-radius: 4px; }
+
+  /* Empty state */
+  .empty-state { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--text-dim); gap: 12px; padding: 40px; text-align: center; }
+  .empty-state .icon { font-size: 48px; }
+  .empty-state h3 { font-size: 16px; color: var(--text); }
+  .empty-state p { font-size: 13px; line-height: 1.6; max-width: 320px; }
+
+  ::-webkit-scrollbar { width: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
+
+  .toast-container { position: fixed; bottom: 18px; right: 18px; z-index: 9999; display: flex; flex-direction: column; gap: 7px; }
+  .toast { background: var(--surface2); border: 1px solid var(--border); border-left: 3px solid var(--green); padding: 9px 13px; border-radius: 4px; font-size: 12px; animation: slideIn .3s ease; max-width: 280px; }
+  .toast.error { border-left-color: var(--red); }
+  @keyframes slideIn { from{transform:translateX(100%);opacity:0} to{transform:translateX(0);opacity:1} }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">⛏ Botcraft <span>Control Panel</span></div>
+  <div class="stats">
+    <div>Online: <strong id="stat-online">0</strong></div>
+    <div>Total: <strong id="stat-total">0</strong></div>
+  </div>
+</header>
+
+<div class="container">
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="sidebar-section">
+      <h3>Connect New Bot</h3>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Server Address</label>
+          <input id="inp-address" type="text" placeholder="mc.example.com" value="127.0.0.1">
+        </div>
+        <div class="form-group" style="max-width:72px">
+          <label>Port</label>
+          <input id="inp-port" type="number" value="25565">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Username (offline/cracked mode)</label>
+        <input id="inp-login" type="text" placeholder="BotName" value="BotcraftBot">
+      </div>
+      <div class="form-group">
+        <label>Bot Type</label>
+        <select id="inp-type">
+          <option value="control">Controllable Bot (minimap + chat)</option>
+          <option value="3_SimpleAFKExample">AFK Bot</option>
+          <option value="0_HelloWorld">Hello World Bot</option>
+        </select>
+      </div>
+      <button class="btn btn-green btn-full" onclick="connectBot()">⚡ Connect Bot</button>
+    </div>
+    <div class="sidebar-section" style="padding-bottom:8px"><h3>Active Bots</h3></div>
+    <div class="bot-list" id="bot-list">
+      <div style="text-align:center;padding:20px;color:var(--text-dim);font-size:13px">No bots connected</div>
+    </div>
+  </div>
+
+  <!-- Main -->
+  <div class="main">
+    <!-- No selection -->
+    <div id="no-selection" class="empty-state">
+      <div class="icon">🤖</div>
+      <h3>No bot selected</h3>
+      <p>Connect a bot using the panel on the left, then select it to view its minimap and controls.</p>
+      <ul style="text-align:left;font-size:12px;color:#666;margin-top:8px;line-height:2">
+        <li>Live top-down minimap of the bot's surroundings</li>
+        <li>Real-time position, health &amp; food bars</li>
+        <li>Send chat messages &amp; server commands</li>
+        <li>Multiple bots with different usernames</li>
+      </ul>
+    </div>
+
+    <!-- Bot panel -->
+    <div id="bot-panel" style="display:none;flex:1;flex-direction:column;overflow:hidden">
+      <div class="main-header">
+        <span style="font-size:18px">🤖</span>
+        <h2 id="panel-name">Bot</h2>
+        <span class="badge" id="panel-status">connecting</span>
+        <span style="font-size:11px;color:var(--text-dim)" id="panel-addr"></span>
+        <button class="btn btn-red" style="margin-left:auto;padding:5px 11px" onclick="disconnectSelected()">✕ Disconnect</button>
+      </div>
+
+      <!-- Tabs -->
+      <div class="tab-bar">
+        <div class="tab active" onclick="switchTab('minimap',this)">🗺 Live Map</div>
+        <div class="tab" onclick="switchTab('controls',this)">🎮 Controls</div>
+        <div class="tab" onclick="switchTab('logs',this)">📋 Logs</div>
+      </div>
+
+      <!-- ── MINIMAP TAB ── -->
+      <div id="tab-minimap" class="tab-content active">
+        <div class="minimap-panel">
+          <div class="minimap-left">
+            <canvas id="minimap-canvas" width="528" height="528"></canvas>
+            <div class="compass"><canvas id="compass-canvas" width="44" height="44"></canvas></div>
+            <div class="coords-overlay" id="coords-overlay">X: — Y: — Z: —</div>
+            <div id="map-waiting" style="position:absolute;color:#555;font-size:13px;text-align:center">
+              🗺 Minimap will appear once<br>the bot connects and loads chunks
+            </div>
+          </div>
+          <div class="minimap-right">
+            <div class="stat-card">
+              <h4>Position</h4>
+              <div class="stat-row"><span>X</span><span class="val" id="stat-x">—</span></div>
+              <div class="stat-row"><span>Y</span><span class="val" id="stat-y">—</span></div>
+              <div class="stat-row"><span>Z</span><span class="val" id="stat-z">—</span></div>
+              <div class="stat-row"><span>Yaw</span><span class="val" id="stat-yaw">—</span></div>
+            </div>
+            <div class="stat-card">
+              <h4>Health &amp; Food</h4>
+              <div class="bar-label">❤ Health <span id="val-health">—</span>/20</div>
+              <div class="bar-track"><div class="bar-fill bar-health" id="bar-health" style="width:0%"></div></div>
+              <div class="bar-label">🍗 Food <span id="val-food">—</span>/20</div>
+              <div class="bar-track"><div class="bar-fill bar-food" id="bar-food" style="width:0%"></div></div>
+            </div>
+            <div class="minimap-legend">
+              <h4 style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text-dim);margin-bottom:8px">Legend</h4>
+              <div class="legend-item"><div class="legend-color" style="background:#4caf50"></div>Grass</div>
+              <div class="legend-item"><div class="legend-color" style="background:#7a7a7a"></div>Stone</div>
+              <div class="legend-item"><div class="legend-color" style="background:#4a7fcb"></div>Water</div>
+              <div class="legend-item"><div class="legend-color" style="background:#e8d44d"></div>Sand</div>
+              <div class="legend-item"><div class="legend-color" style="background:#6b4226"></div>Wood</div>
+              <div class="legend-item"><div class="legend-color" style="background:#2d7a2d"></div>Leaves</div>
+              <div class="legend-item"><div class="legend-color" style="background:#ff6600"></div>Lava</div>
+              <div class="legend-item"><div class="legend-color" style="background:#ffffff"></div>Snow</div>
+              <div class="legend-item"><div class="legend-color" style="background:#8b4513"></div>Dirt</div>
+              <div class="legend-item"><div class="legend-color" style="background:#ff0000"></div>🤖 You</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── CONTROLS TAB ── -->
+      <div id="tab-controls" class="tab-content">
+        <div class="controls-panel">
+          <div>
+            <div class="action-group-label">Movement</div>
+            <div class="move-pad" id="move-pad">
+              <div class="move-row">
+                <div class="move-btn spacer"></div>
+                <div class="move-btn" id="btn-forward"
+                     onmousedown="moveStart('forward',this)" onmouseup="moveStop('forward',this)" onmouseleave="moveStop('forward',this)"
+                     ontouchstart="moveStart('forward',this);event.preventDefault()" ontouchend="moveStop('forward',this)" title="W — Hold to move">↑</div>
+                <div class="move-btn spacer"></div>
+              </div>
+              <div class="move-row">
+                <div class="move-btn" id="btn-left"
+                     onmousedown="moveStart('left',this)" onmouseup="moveStop('left',this)" onmouseleave="moveStop('left',this)"
+                     ontouchstart="moveStart('left',this);event.preventDefault()" ontouchend="moveStop('left',this)" title="A — Hold to strafe">←</div>
+                <div class="move-btn" id="btn-back"
+                     onmousedown="moveStart('back',this)" onmouseup="moveStop('back',this)" onmouseleave="moveStop('back',this)"
+                     ontouchstart="moveStart('back',this);event.preventDefault()" ontouchend="moveStop('back',this)" title="S — Hold to move back">↓</div>
+                <div class="move-btn" id="btn-right"
+                     onmousedown="moveStart('right',this)" onmouseup="moveStop('right',this)" onmouseleave="moveStop('right',this)"
+                     ontouchstart="moveStart('right',this);event.preventDefault()" ontouchend="moveStop('right',this)" title="D — Hold to strafe">→</div>
+              </div>
+            </div>
+          </div>
+          <div class="action-group">
+            <div class="action-group-label">Actions</div>
+            <button class="btn btn-gray" id="btn-jump" style="width:115px"
+              onmousedown="moveStart('jump',this)" onmouseup="moveStop('jump',this)" onmouseleave="moveStop('jump',this)"
+              ontouchstart="moveStart('jump',this);event.preventDefault()" ontouchend="moveStop('jump',this)">🦘 Jump</button>
+            <button class="btn btn-gray" id="btn-sneak" style="width:115px"
+              onmousedown="moveStart('sneak',this)" onmouseup="moveStop('sneak',this)" onmouseleave="moveStop('sneak',this)"
+              ontouchstart="moveStart('sneak',this);event.preventDefault()" ontouchend="moveStop('sneak',this)">🥷 Sneak</button>
+            <button class="btn btn-gray" id="btn-sprint" style="width:115px" onclick="toggleSprint(this)">⚡ Sprint</button>
+          </div>
+          <div class="chat-section">
+            <div>
+              <div class="action-group-label">Chat Message</div>
+              <div class="chat-input-row">
+                <input id="inp-chat" type="text" placeholder="Type a message..." onkeydown="if(event.key==='Enter')sendChat()">
+                <button class="btn btn-blue" onclick="sendChat()">💬 Send</button>
+              </div>
+            </div>
+            <div>
+              <div class="action-group-label">Server Command</div>
+              <div class="chat-input-row">
+                <input id="inp-cmd" type="text" placeholder="/gamemode creative" onkeydown="if(event.key==='Enter')sendCommand()">
+                <button class="btn btn-gray" onclick="sendCommand()">⚡ Run</button>
+              </div>
+            </div>
+            <div>
+              <div class="action-group-label">Quick Commands</div>
+              <div style="display:flex;gap:5px;flex-wrap:wrap">
+                <button class="btn btn-gray" style="font-size:11px;padding:4px 9px" onclick="quickCmd('gamemode creative')">creative</button>
+                <button class="btn btn-gray" style="font-size:11px;padding:4px 9px" onclick="quickCmd('gamemode survival')">survival</button>
+                <button class="btn btn-gray" style="font-size:11px;padding:4px 9px" onclick="quickCmd('kill')">kill</button>
+                <button class="btn btn-gray" style="font-size:11px;padding:4px 9px" onclick="quickCmd('list')">list</button>
+                <button class="btn btn-gray" style="font-size:11px;padding:4px 9px" onclick="quickCmd('help')">help</button>
+                <button class="btn btn-gray" style="font-size:11px;padding:4px 9px" onclick="quickCmd('spawn')">spawn</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div style="flex:1;background:#111;display:flex;align-items:center;justify-content:center;color:#444;font-size:13px;flex-direction:column;gap:8px">
+          <div style="font-size:32px">🎮</div>
+          <div>Switch to the Logs tab to see bot output</div>
+        </div>
+      </div>
+
+      <!-- ── LOGS TAB ── -->
+      <div id="tab-logs" class="tab-content">
+        <div class="logs-area" id="logs-area">
+          <div class="log-line system">[ Botcraft Control Panel — waiting for output... ]</div>
+        </div>
+        <div class="log-toolbar">
+          <span id="log-count">0 lines</span>
+          <button class="btn btn-gray" style="padding:3px 9px;font-size:11px;margin-left:auto" onclick="clearLogs()">Clear</button>
+          <label style="font-size:12px;display:flex;align-items:center;gap:5px;cursor:pointer">
+            <input type="checkbox" id="auto-scroll" checked> Auto-scroll
+          </label>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast-container" id="toast-container"></div>
+
+<script>
+// ─── Block colour map ───────────────────────────────────────────────────────
+const BLOCK_COLORS = {
+  air:'#1a2a3a',
+  cave_air:'#111',
+  void_air:'#111',
+  water:'#4a7fcb',
+  lava:'#ff6600',
+  grass_block:'#4caf50',
+  grass:'#3da046',
+  tall_grass:'#3da046',
+  fern:'#3da046',
+  large_fern:'#3da046',
+  dirt:'#8b4513',
+  coarse_dirt:'#7a3b0f',
+  podzol:'#6b2f0c',
+  rooted_dirt:'#7a3b0f',
+  stone:'#7a7a7a',
+  cobblestone:'#6a6a6a',
+  mossy_cobblestone:'#5a7a5a',
+  deepslate:'#555',
+  cobbled_deepslate:'#4a4a4a',
+  bedrock:'#333',
+  sand:'#e8d44d',
+  red_sand:'#c87030',
+  gravel:'#888',
+  sandstone:'#d4c050',
+  red_sandstone:'#b86030',
+  oak_log:'#6b4226',
+  birch_log:'#d4c9a0',
+  spruce_log:'#4a3520',
+  jungle_log:'#5a4020',
+  acacia_log:'#8b4010',
+  dark_oak_log:'#2a1a0a',
+  oak_planks:'#c8902e',
+  birch_planks:'#e0d080',
+  spruce_planks:'#7a5030',
+  jungle_planks:'#b07040',
+  acacia_planks:'#c06030',
+  dark_oak_planks:'#4a2e18',
+  oak_leaves:'#2d7a2d',
+  birch_leaves:'#4a9a4a',
+  spruce_leaves:'#1a5a1a',
+  jungle_leaves:'#1a7a1a',
+  acacia_leaves:'#3a7a2a',
+  dark_oak_leaves:'#1a5a10',
+  cherry_leaves:'#e87090',
+  snow:'#f0f0f0',
+  snow_block:'#e8e8e8',
+  ice:'#a0c0e0',
+  packed_ice:'#90b0d0',
+  blue_ice:'#6090c0',
+  clay:'#a0a8b8',
+  terracotta:'#a05030',
+  white_terracotta:'#c0a898',
+  orange_terracotta:'#a05828',
+  netherrack:'#7a2020',
+  nether_bricks:'#6a1818',
+  soul_sand:'#5a4030',
+  soul_soil:'#4a3020',
+  magma_block:'#a04010',
+  obsidian:'#1a0a2a',
+  crying_obsidian:'#3a0a4a',
+  end_stone:'#d8d8a0',
+  end_stone_bricks:'#c8c890',
+  glowstone:'#e0c050',
+  shroomlight:'#e09030',
+  sea_lantern:'#80c0d0',
+  prismarine:'#4a9a8a',
+  prismarine_bricks:'#3a8a7a',
+  dark_prismarine:'#2a6a5a',
+  diamond_ore:'#40c0d0',
+  iron_ore:'#c09080',
+  gold_ore:'#d0b030',
+  coal_ore:'#404040',
+  emerald_ore:'#30c050',
+  redstone_ore:'#c03020',
+  lapis_ore:'#3050a0',
+  copper_ore:'#b07050',
+  ancient_debris:'#7a4a30',
+  nether_quartz_ore:'#d0c0b0',
+  nether_gold_ore:'#d0a020',
+  white_wool:'#e0e0e0',
+  orange_wool:'#e07020',
+  magenta_wool:'#c050c0',
+  light_blue_wool:'#6090e0',
+  yellow_wool:'#e0e020',
+  lime_wool:'#60e020',
+  pink_wool:'#e08080',
+  gray_wool:'#606060',
+  light_gray_wool:'#a0a0a0',
+  cyan_wool:'#20a0a0',
+  purple_wool:'#8020c0',
+  blue_wool:'#2020c0',
+  brown_wool:'#7a4020',
+  green_wool:'#306020',
+  red_wool:'#c02020',
+  black_wool:'#202020',
+  flower_pot:'#c07050',
+  dandelion:'#e0e020',
+  poppy:'#e02020',
+  blue_orchid:'#3080e0',
+  allium:'#c060c0',
+  azure_bluet:'#a0c0ff',
+  red_tulip:'#e04040',
+  orange_tulip:'#e07040',
+  white_tulip:'#f0f0f0',
+  pink_tulip:'#f080a0',
+  oxeye_daisy:'#f0f0c0',
+  cornflower:'#5070e0',
+  lily_of_the_valley:'#f0f0f0',
+  rose_bush:'#c03050',
+  sunflower:'#e0c020',
+  lilac:'#c080c0',
+  peony:'#e090c0',
+};
+
+function blockColor(name) {
+  if (!name || name === 'air') return BLOCK_COLORS.air;
+  // Exact match
+  if (BLOCK_COLORS[name]) return BLOCK_COLORS[name];
+  // Partial match
+  for (const [k, v] of Object.entries(BLOCK_COLORS)) {
+    if (name.includes(k) || k.includes(name)) return v;
+  }
+  // Category fallback
+  if (name.includes('log') || name.includes('wood')) return '#6b4226';
+  if (name.includes('leaves') || name.includes('bush') || name.includes('vine') || name.includes('fern')) return '#2d7a2d';
+  if (name.includes('planks')) return '#c8902e';
+  if (name.includes('stone') || name.includes('slate') || name.includes('diorite') || name.includes('andesite') || name.includes('granite')) return '#7a7a7a';
+  if (name.includes('sand')) return '#e8d44d';
+  if (name.includes('ore')) return '#6a6aaa';
+  if (name.includes('wool')) return '#e0c0c0';
+  if (name.includes('concrete')) return '#888';
+  if (name.includes('glass')) return 'rgba(200,230,255,0.3)';
+  if (name.includes('terracotta')) return '#a05030';
+  if (name.includes('brick')) return '#a05030';
+  if (name.includes('nether')) return '#7a2020';
+  if (name.includes('end')) return '#d8d8a0';
+  if (name.includes('water')) return '#4a7fcb';
+  if (name.includes('ice')) return '#a0c0e0';
+  if (name.includes('snow')) return '#f0f0f0';
+  if (name.includes('dirt') || name.includes('soil') || name.includes('mud')) return '#8b4513';
+  if (name.includes('grass')) return '#4caf50';
+  return '#555';
+}
+
+// ─── State ──────────────────────────────────────────────────────────────────
+const socket = io();
+let selectedBotId = null;
+let allBots = {};
+let logCount = 0;
+let currentTab = 'minimap';
+let latestBlocks = null;
+let latestPlayer = null;
+let mapAnimFrame = null;
+
+// ─── Socket events ───────────────────────────────────────────────────────────
+socket.on('connect', () => addLog('system', '[ Connected to Botcraft Control Panel ]'));
+
+socket.on('bot_list', bots => {
+  allBots = {};
+  bots.forEach(b => { allBots[b.bot_id] = b; });
+  renderBotList();
+  if (selectedBotId && allBots[selectedBotId]) selectBot(selectedBotId);
+});
+
+socket.on('bot_log', data => {
+  if (allBots[data.bot_id]) allBots[data.bot_id].status = data.status;
+  updateBotCard(data.bot_id);
+  if (data.bot_id === selectedBotId) {
+    addLog(classifyLog(data.line), data.line);
+    updatePanelStatus(data.status);
+  }
+});
+
+socket.on('bot_status_data', data => {
+  if (data.bot_id !== selectedBotId) return;
+  latestPlayer = data.player;
+  updateStats(data.player);
+  if (allBots[data.bot_id]) allBots[data.bot_id].status = 'connected';
+  updateBotCard(data.bot_id);
+  updatePanelStatus('connected');
+});
+
+socket.on('bot_blocks', data => {
+  if (data.bot_id !== selectedBotId) return;
+  latestBlocks = data.blocks;
+  document.getElementById('map-waiting').style.display = 'none';
+  renderMinimap();
+});
+
+socket.on('bot_status', data => {
+  if (allBots[data.bot_id]) allBots[data.bot_id].status = data.status;
+  updateBotCard(data.bot_id);
+  if (data.bot_id === selectedBotId) updatePanelStatus(data.status);
+  if (data.status === 'disconnected') {
+    toast(`Bot disconnected`, 'error');
+    setTimeout(() => { delete allBots[data.bot_id]; renderBotList(); if(selectedBotId===data.bot_id){selectedBotId=null;showNoSelection();} }, 2000);
+  }
+  updateStats_counts();
+});
+
+// ─── Connect / Disconnect ────────────────────────────────────────────────────
+async function connectBot() {
+  const address = document.getElementById('inp-address').value.trim();
+  const port = document.getElementById('inp-port').value.trim();
+  const login = document.getElementById('inp-login').value.trim();
+  const botType = document.getElementById('inp-type').value;
+  if (!address || !login) { toast('Fill in server address and username', 'error'); return; }
+  const res = await fetch('/api/bots/connect', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({address, port, login, bot_type: botType})
+  });
+  const data = await res.json();
+  if (data.error) { toast(data.error, 'error'); return; }
+  allBots[data.bot_id] = { bot_id:data.bot_id, address:address+':'+port, login, bot_type:botType, status:'connecting', connected_at:new Date().toLocaleTimeString(), logs:[] };
+  renderBotList();
+  selectBot(data.bot_id);
+  toast(`Connecting ${login} to ${address}:${port}…`);
+}
+
+async function disconnectSelected() {
+  if (!selectedBotId) return;
+  await fetch(`/api/bots/${selectedBotId}/disconnect`, {method:'POST'});
+  delete allBots[selectedBotId];
+  selectedBotId = null;
+  latestBlocks = null; latestPlayer = null;
+  renderBotList(); showNoSelection();
+  toast('Bot disconnected');
+}
+
+async function kickBot(id) {
+  await fetch(`/api/bots/${id}/disconnect`, {method:'POST'});
+  delete allBots[id];
+  renderBotList();
+  if (selectedBotId===id) { selectedBotId=null; latestBlocks=null; latestPlayer=null; showNoSelection(); }
+  toast('Bot disconnected');
+}
+
+// ─── Chat / Commands ─────────────────────────────────────────────────────────
+async function sendChat() {
+  const msg = document.getElementById('inp-chat').value.trim();
+  if (!msg || !selectedBotId) return;
+  await fetch(`/api/bots/${selectedBotId}/chat`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:msg})});
+  document.getElementById('inp-chat').value='';
+  addLog('system', `[ → Chat: ${msg} ]`);
+}
+async function sendCommand() {
+  const cmd = document.getElementById('inp-cmd').value.trim().replace(/^\//,'');
+  if (!cmd || !selectedBotId) return;
+  await fetch(`/api/bots/${selectedBotId}/command`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:cmd})});
+  document.getElementById('inp-cmd').value='';
+  addLog('system', `[ → /${cmd} ]`);
+}
+function quickCmd(c) { document.getElementById('inp-cmd').value='/'+c; sendCommand(); }
+// ─── Movement ────────────────────────────────────────────────────────────────
+let sprintOn = false;
+
+async function moveStart(dir, el) {
+  if (!selectedBotId) { toast('Select a bot first', 'error'); return; }
+  el.classList.add('held');
+  await fetch(`/api/bots/${selectedBotId}/move`, {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ action: 'start', direction: dir })
+  });
+}
+
+async function moveStop(dir, el) {
+  if (!selectedBotId) return;
+  el.classList.remove('held');
+  await fetch(`/api/bots/${selectedBotId}/move`, {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ action: 'stop', direction: dir })
+  });
+}
+
+async function toggleSprint(el) {
+  if (!selectedBotId) return;
+  sprintOn = !sprintOn;
+  el.classList.toggle('held', sprintOn);
+  await fetch(`/api/bots/${selectedBotId}/move`, {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ action: sprintOn ? 'start' : 'stop', direction: 'sprint' })
+  });
+  toast(sprintOn ? 'Sprint ON' : 'Sprint OFF');
+}
+
+// ─── Tab switching ───────────────────────────────────────────────────────────
+function switchTab(name, el) {
+  currentTab = name;
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('tab-'+name).classList.add('active');
+  if (name==='minimap' && latestBlocks) renderMinimap();
+}
+
+// ─── Bot selection ───────────────────────────────────────────────────────────
+function selectBot(id) {
+  selectedBotId = id;
+  const bot = allBots[id];
+  if (!bot) return;
+  latestBlocks = bot.block_map || null;
+  latestPlayer = bot.player_status || null;
+  document.getElementById('no-selection').style.display = 'none';
+  document.getElementById('bot-panel').style.display = 'flex';
+  document.getElementById('panel-name').textContent = bot.login;
+  document.getElementById('panel-addr').textContent = bot.address;
+  updatePanelStatus(bot.status);
+  // Logs
+  const area = document.getElementById('logs-area');
+  area.innerHTML=''; logCount=0;
+  if (bot.logs?.length) bot.logs.forEach(l=>addLog(classifyLog(l),l));
+  else addLog('system','[ No logs yet — waiting for bot output… ]');
+  // Map
+  document.getElementById('map-waiting').style.display = latestBlocks ? 'none' : 'block';
+  if (latestBlocks) renderMinimap();
+  if (latestPlayer) updateStats(latestPlayer);
+  document.querySelectorAll('.bot-card').forEach(c=>c.classList.remove('active'));
+  const card = document.getElementById('bot-card-'+id);
+  if (card) card.classList.add('active');
+}
+function showNoSelection() {
+  document.getElementById('no-selection').style.display='flex';
+  document.getElementById('bot-panel').style.display='none';
+}
+
+// ─── Minimap rendering ────────────────────────────────────────────────────────
+function renderMinimap() {
+  if (!latestBlocks || currentTab !== 'minimap') return;
+  const canvas = document.getElementById('minimap-canvas');
+  const ctx = canvas.getContext('2d');
+  const data = latestBlocks.data;
+  if (!data || !data.length) return;
+
+  const rows = data.length;
+  const cols = data[0].length;
+  const cw = canvas.width / cols;
+  const ch = canvas.height / rows;
+
+  for (let z = 0; z < rows; z++) {
+    for (let x = 0; x < cols; x++) {
+      ctx.fillStyle = blockColor(data[z][x]);
+      ctx.fillRect(x * cw, z * ch, cw + 0.5, ch + 0.5);
+    }
+  }
+
+  // Draw player in centre
+  const cx = canvas.width / 2;
+  const cy = canvas.height / 2;
+  ctx.fillStyle = '#ff0000';
+  ctx.beginPath();
+  ctx.arc(cx, cy, Math.max(cw*1.5, 4), 0, Math.PI*2);
+  ctx.fill();
+
+  // Draw direction arrow
+  if (latestPlayer) {
+    const yawRad = (latestPlayer.yaw * Math.PI / 180);
+    const len = Math.max(cw*4, 10);
+    ctx.strokeStyle = '#ff0000';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + Math.sin(yawRad)*len, cy - Math.cos(yawRad)*len);
+    ctx.stroke();
+  }
+
+  // Compass
+  if (latestPlayer) drawCompass(latestPlayer.yaw);
+}
+
+function drawCompass(yaw) {
+  const c = document.getElementById('compass-canvas');
+  const ctx = c.getContext('2d');
+  const cx = 22, cy = 22, r = 18;
+  ctx.clearRect(0,0,44,44);
+  ctx.fillStyle='rgba(0,0,0,0.6)';
+  ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle='#444'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2); ctx.stroke();
+
+  // N pointer (red)
+  const yawRad = yaw * Math.PI / 180;
+  ctx.save(); ctx.translate(cx,cy); ctx.rotate(yawRad);
+  ctx.fillStyle='#ff4444';
+  ctx.beginPath(); ctx.moveTo(0,-14); ctx.lineTo(4,0); ctx.lineTo(-4,0); ctx.closePath(); ctx.fill();
+  ctx.fillStyle='#aaa';
+  ctx.beginPath(); ctx.moveTo(0,14); ctx.lineTo(4,0); ctx.lineTo(-4,0); ctx.closePath(); ctx.fill();
+  ctx.restore();
+  ctx.fillStyle='#fff'; ctx.font='bold 9px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText('N',cx,cy-r+6);
+}
+
+// ─── Stats panel ─────────────────────────────────────────────────────────────
+function updateStats(p) {
+  document.getElementById('stat-x').textContent = p.x !== undefined ? p.x.toFixed(1) : '—';
+  document.getElementById('stat-y').textContent = p.y !== undefined ? p.y.toFixed(1) : '—';
+  document.getElementById('stat-z').textContent = p.z !== undefined ? p.z.toFixed(1) : '—';
+  document.getElementById('stat-yaw').textContent = p.yaw !== undefined ? p.yaw.toFixed(0)+'°' : '—';
+  document.getElementById('coords-overlay').textContent = `X:${p.x?.toFixed(0)} Y:${p.y?.toFixed(0)} Z:${p.z?.toFixed(0)}`;
+  if (p.health !== undefined) {
+    const h = Math.max(0, Math.min(20, p.health));
+    document.getElementById('val-health').textContent = h.toFixed(1);
+    document.getElementById('bar-health').style.width = (h/20*100)+'%';
+  }
+  if (p.food !== undefined) {
+    const f = Math.max(0, Math.min(20, p.food));
+    document.getElementById('val-food').textContent = f;
+    document.getElementById('bar-food').style.width = (f/20*100)+'%';
+  }
+}
+
+// ─── Bot list rendering ───────────────────────────────────────────────────────
+function renderBotList() {
+  const list = document.getElementById('bot-list');
+  const bots = Object.values(allBots);
+  if (!bots.length) { list.innerHTML='<div style="text-align:center;padding:20px;color:var(--text-dim);font-size:13px">No bots connected</div>'; updateStats_counts(); return; }
+  list.innerHTML = bots.map(b=>`
+    <div class="bot-card ${b.bot_id===selectedBotId?'active':''}" id="bot-card-${b.bot_id}" onclick="selectBot('${b.bot_id}')">
+      <div class="bot-card-header">
+        <div class="status-dot ${b.status}"></div>
+        <div><div class="bot-name">${esc(b.login)}</div><div class="bot-addr">${esc(b.address)}</div></div>
+        <div class="bot-meta" style="margin-left:auto">${esc(b.connected_at||'')}</div>
+      </div>
+      <div class="bot-card-actions" onclick="event.stopPropagation()">
+        <button class="btn btn-gray" style="font-size:11px;padding:3px 7px" onclick="selectBot('${b.bot_id}')">Select</button>
+        <button class="btn btn-red"  style="font-size:11px;padding:3px 7px" onclick="kickBot('${b.bot_id}')">✕</button>
+      </div>
+    </div>`).join('');
+  updateStats_counts();
+}
+
+function updateBotCard(id) {
+  const bot = allBots[id];
+  if (!bot) return;
+  const dot = document.querySelector(`#bot-card-${id} .status-dot`);
+  if (dot) dot.className='status-dot '+bot.status;
+  updateStats_counts();
+}
+
+function updatePanelStatus(s) {
+  const b = document.getElementById('panel-status');
+  b.textContent = s; b.className='badge '+s;
+}
+
+function updateStats_counts() {
+  const bots = Object.values(allBots);
+  document.getElementById('stat-total').textContent = bots.length;
+  document.getElementById('stat-online').textContent = bots.filter(b=>b.status==='connected').length;
+}
+
+// ─── Logs ────────────────────────────────────────────────────────────────────
+function addLog(type, text) {
+  const area = document.getElementById('logs-area');
+  if (!area) return;
+  const d = document.createElement('div');
+  d.className='log-line '+type; d.textContent=text;
+  area.appendChild(d); logCount++;
+  document.getElementById('log-count').textContent = logCount+' lines';
+  if (document.getElementById('auto-scroll').checked) area.scrollTop=area.scrollHeight;
+}
+function clearLogs() { document.getElementById('logs-area').innerHTML=''; logCount=0; document.getElementById('log-count').textContent='0 lines'; }
+function classifyLog(l) {
+  const s=l.toLowerCase();
+  if(s.includes('[fatal]')||s.includes('fatal'))return'fatal';
+  if(s.includes('[error]')||s.includes('error'))return'error';
+  if(s.includes('[warn]')||s.includes('warning'))return'warn';
+  if(s.includes('[debug]'))return'debug';
+  return'info';
+}
+
+// ─── Utility ──────────────────────────────────────────────────────────────────
+function toast(msg, type='info') {
+  const c=document.getElementById('toast-container');
+  const t=document.createElement('div');
+  t.className='toast'+(type==='error'?' error':''); t.textContent=msg;
+  c.appendChild(t); setTimeout(()=>t.remove(),3500);
+}
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+</script>
+</body>
+</html>
