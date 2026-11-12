@@ -1,0 +1,14 @@
+name: EnchainSMP
+version: 1.0.0
+main: com.glitchsmp.enchainsmp.EnchainSMP
+api-version: '1.21'
+description: Allows all vanilla enchantments to work on any item, including normally incompatible combinations, with real gameplay effects.
+author: GlitchSMP
+
+permissions:
+  enchainsmp.*:
+    description: Grants all EnchainSMP commands/permissions.
+    default: op
+  enchainsmp.reload:
+    description: Allows reloading the plugin configuration.
+    default: op
